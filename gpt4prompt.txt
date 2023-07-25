@@ -1,0 +1,233 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2639
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;\f1\fnil\fcharset0 AppleColorEmoji;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 The following text is a Git repository with code. The structure of the text are sections that begin with ----, followed by a single line containing the file path and file name, followed by a variable amount of lines containing the file contents. The text representing the Git repository ends when the symbols --END-- are encounted. Any further text beyond --END-- are meant to be interpreted as instructions using the aforementioned Git repository as context.\
+----\
+ingest.py\
+"""This is the logic for ingesting Notion data into LangChain."""\
+from pathlib import Path\
+from langchain.text_splitter import CharacterTextSplitter\
+import faiss\
+from langchain.vectorstores import FAISS\
+from langchain.embeddings import OpenAIEmbeddings\
+import pickle\
+\
+\
+# Here we load in the data in the format that Notion exports it in.\
+ps = list(Path("Notion_DB/").glob("**/*.md"))\
+\
+data = []\
+sources = []\
+for p in ps:\
+    with open(p) as f:\
+        data.append(f.read())\
+    sources.append(p)\
+\
+# Here we split the documents, as needed, into smaller chunks.\
+# We do this due to the context limits of the LLMs.\
+text_splitter = CharacterTextSplitter(chunk_size=1500, separator="\\n")\
+docs = []\
+metadatas = []\
+for i, d in enumerate(data):\
+    splits = text_splitter.split_text(d)\
+    docs.extend(splits)\
+    metadatas.extend([\{"source": sources[i]\}] * len(splits))\
+\
+\
+# Here we create a vector store from the documents and save it to disk.\
+store = FAISS.from_texts(docs, OpenAIEmbeddings(), metadatas=metadatas)\
+faiss.write_index(store.index, "docs.index")\
+store.index = None\
+with open("faiss_store.pkl", "wb") as f:\
+    pickle.dump(store, f)\
+\
+----\
+.DS_Store\
+\
+----\
+requirements.txt\
+langchain==0.0.170\
+openai\
+faiss-cpu\
+streamlit\
+streamlit-chat\
+tiktoken\
+\
+----\
+README.md\
+# Notion Question-Answering\
+\
+
+\f1 \uc0\u55358 \u56598 
+\f0 Ask questions to your Notion database in natural language
+\f1 \uc0\u55358 \u56598 
+\f0 \
+\
+
+\f1 \uc0\u55357 \u56490 
+\f0  Built with [LangChain](https://github.com/hwchase17/langchain)\
+\
+# 
+\f1 \uc0\u55356 \u57138 
+\f0  Environment Setup\
+\
+In order to set your environment up to run the code here, first install all requirements:\
+\
+```shell\
+pip install -r requirements.txt\
+```\
+\
+Then set your OpenAI API key (if you don't have one, get one [here](https://beta.openai.com/playground))\
+\
+```shell\
+export OPENAI_API_KEY=....\
+```\
+\
+# 
+\f1 \uc0\u55357 \u56516 
+\f0  What is in here?\
+- Example data from Blendle \
+- Python script to query Notion with a question\
+- Code to deploy on StreamLit\
+- Instructions for ingesting your own dataset\
+\
+## 
+\f1 \uc0\u55357 \u56522 
+\f0  Example Data\
+This repo uses the [Blendle Employee Handbook](https://www.notion.so/Blendle-s-Employee-Handbook-7692ffe24f07450785f093b94bbe1a09) as an example.\
+It was downloaded October 18th so may have changed slightly since then!\
+\
+## 
+\f1 \uc0\u55357 \u56492 
+\f0  Ask a question\
+In order to ask a question, run a command like:\
+\
+```shell\
+python qa.py "is there food in the office?"\
+```\
+\
+You can switch out `is there food in the office?` for any question of your liking!\
+\
+This exposes a chat interface for interacting with a Notion database.\
+IMO, this is a more natural and convenient interface for getting information.\
+\
+## 
+\f1 \uc0\u55357 \u56960 
+\f0  Code to deploy on StreamLit\
+\
+The code to run the StreamLit app is in `main.py`. \
+Note that when setting up your StreamLit app you should make sure to add `OPENAI_API_KEY` as a secret environment variable.\
+\
+## 
+\f1 \uc0\u55358 \u56785 
+\f0  Instructions for ingesting your own dataset\
+\
+Export your dataset from Notion. You can do this by clicking on the three dots in the upper right hand corner and then clicking `Export`.\
+\
+<img src="export_notion.png" alt="export" width="200"/>\
+\
+When exporting, make sure to select the `Markdown & CSV` format option.\
+\
+<img src="export_format.png" alt="export-format" width="200"/>\
+\
+This will produce a `.zip` file in your Downloads folder. Move the `.zip` file into this repository.\
+\
+Run the following command to unzip the zip file (replace the `Export...` with your own file name as needed).\
+\
+```shell\
+unzip Export-d3adfe0f-3131-4bf3-8987-a52017fc1bae.zip -d Notion_DB\
+```\
+\
+Run the following command to ingest the data.\
+\
+```shell\
+python ingest.py\
+```\
+\
+Boom! Now you're done, and you can ask it questions like:\
+\
+```shell\
+python qa.py "is there food in the office?"\
+```\
+\
+----\
+main.py\
+"""Python file to serve as the frontend"""\
+import streamlit as st\
+from streamlit_chat import message\
+import faiss\
+from langchain import OpenAI\
+from langchain.chains import VectorDBQAWithSourcesChain\
+import pickle\
+\
+# Load the LangChain.\
+index = faiss.read_index("docs.index")\
+\
+with open("faiss_store.pkl", "rb") as f:\
+    store = pickle.load(f)\
+\
+store.index = index\
+chain = VectorDBQAWithSourcesChain.from_llm(llm=OpenAI(temperature=0), vectorstore=store)\
+\
+\
+# From here down is all the StreamLit UI.\
+st.set_page_config(page_title="Blendle Notion QA Bot", page_icon=":robot:")\
+st.header("Blendle Notion QA Bot")\
+\
+if "generated" not in st.session_state:\
+    st.session_state["generated"] = []\
+\
+if "past" not in st.session_state:\
+    st.session_state["past"] = []\
+\
+\
+def get_text():\
+    input_text = st.text_input("You: ", "Hello, how are you?", key="input")\
+    return input_text\
+\
+\
+user_input = get_text()\
+\
+if user_input:\
+    result = chain(\{"question": user_input\})\
+    output = f"Answer: \{result['answer']\}\\nSources: \{result['sources']\}"\
+\
+    st.session_state.past.append(user_input)\
+    st.session_state.generated.append(output)\
+\
+if st.session_state["generated"]:\
+\
+    for i in range(len(st.session_state["generated"]) - 1, -1, -1):\
+        message(st.session_state["generated"][i], key=str(i))\
+        message(st.session_state["past"][i], is_user=True, key=str(i) + "_user")\
+\
+----\
+qa.py\
+"""Ask a question to the notion database."""\
+import faiss\
+from langchain.chat_models import ChatOpenAI\
+from langchain.chains import RetrievalQAWithSourcesChain\
+import pickle\
+import argparse\
+\
+parser = argparse.ArgumentParser(description='Ask a question to the notion DB.')\
+parser.add_argument('question', type=str, help='The question to ask the notion DB')\
+args = parser.parse_args()\
+\
+# Load the LangChain.\
+index = faiss.read_index("docs.index")\
+\
+with open("faiss_store.pkl", "rb") as f:\
+    store = pickle.load(f)\
+\
+store.index = index\
+chain = RetrievalQAWithSourcesChain.from_chain_type(llm=ChatOpenAI(temperature=0), retriever=store.as_retriever())\
+result = chain(\{"question": args.question\})\
+print(f"Answer: \{result['answer']\}")\
+print(f"Sources: \{result['sources']\}")\
+\
+--END--}

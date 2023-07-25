@@ -5,7 +5,9 @@ import faiss
 from langchain.vectorstores import FAISS
 from langchain.embeddings import OpenAIEmbeddings
 import pickle
+from dotenv import load_dotenv, find_dotenv
 
+_ = load_dotenv(find_dotenv()) # read local .env file
 
 # Here we load in the data in the format that Notion exports it in.
 ps = list(Path("Notion_DB/").glob("**/*.md"))
